@@ -2,12 +2,9 @@ import discord
 from discord.ext import commands,tasks
 from datetime import datetime
 import os
-from dotenv import load_dotenv
 
 
-
-load_dotenv()
-TOKEN = os.getenv('TOKEN')
+TOKEN = os.environ('TOKEN')
 
 
 
