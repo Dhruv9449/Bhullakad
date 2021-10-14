@@ -188,7 +188,7 @@ async def weather(ctx,location):
     weather=data["weather"][0]["main"]+"("+data["weather"][0]["description"]+")"
     image=data["weather"][0]["icon"]+".png"
     place=data["name"]
-    file = discord.File(f"icons\{image}", filename="image_url.png")
+    file = discord.File(r"icons\{image}".format(image=image), filename="image_url.png")
     image_url=f"https://github.com/yuvraaaj/openweathermap-api-icons/blob/master/icons/{image}"
     sunny=0xe00707
     rainy=0x770e0
@@ -207,7 +207,7 @@ async def weather(ctx,location):
         colour=cloudy
 
 
-    Embed=discord.Embed(title=f"Weather:white_sun_rain_cloud: in {location} is currently : ", description=weather, timestamp=datetime.now(), colour=colour)
+    Embed=discord.Embed(title=f"Weather:white_sun_rain_cloud: in {place} is currently : ", description=weather, timestamp=datetime.now(), colour=colour)
     Embed.add_field(name="Temperature(°C):", value=str(temp["temp"]), inline=False)
     Embed.add_field(name="Feels like(°C):",value=str(temp["feels_like"]), inline=False)
     Embed.add_field(name="Humidity:", value=str(temp["humidity"])+"%", inline=False)
