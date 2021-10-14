@@ -188,7 +188,7 @@ async def weather(ctx,location):
     weather=data["weather"][0]["main"]+"("+data["weather"][0]["description"]+")"
     image=data["weather"][0]["icon"]+".png"
     place=data["name"]
-    file = discord.File(r"icons\{image}".format(image=image), filename="image_url.png")
+    file = discord.File(fr"icons\{image}", filename="image_url.png")
     image_url=f"https://github.com/yuvraaaj/openweathermap-api-icons/blob/master/icons/{image}"
     sunny=0xe00707
     rainy=0x770e0
