@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import os
 import json
 import requests
+from random import randint
+
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -17,11 +19,21 @@ WAPI = os.getenv("WEATHERAPI")
 f=open("reminders.txt")
 reminders=(eval(f.read()))
 f.close()
+f=open("xps.txt")
+xps=eval(f.read())
+f.close()
 
-def commit():
-    f=open("reminders.txt","w")
-    f.write(str(reminders))
-    f.close()
+
+def commit(t):
+    if t=="r":
+        f=open("reminders.txt","w")
+        f.write(str(reminders))
+        f.close()
+    else:
+        f=open("xps.txt","w")
+        f.write(str(xps))
+        f.close()
+
 
 
 
@@ -33,11 +45,62 @@ bot = commands.Bot(command_prefix='!r ',intents=intents)
 
 
 
+async def xps_inc(msg):
+    user=msg.author.id
+    if user not in xps:
+        xps[user]=[randint(1,5),0]
+    else:
+        xps[user][0]+=randint(1,5)
+    xp=xps[user][0]
+    levelup=lvlup(user,xp)
+    curlvl=xps[user][1]
+    if levelup==1:
+        user=bot.get_user(user)
+        await msg.channel.send(f"Congrats {user.mention}! you just leveled up to {curlvl}")
+    commit("l")
+
+
+def lvlup(user,xp):
+    curlvl=xps[user][1]
+    nextlvl=int(xp**(1/4))
+    if curlvl!=nextlvl:
+        xps[user][1]+=1
+        return 1
+    else:
+        return 0
+
+
+
+@bot.event
+async def on_message(msg):
+    if msg.author.bot:
+        return
+    await xps_inc(msg)
+    await bot.process_commands(msg)
+
+
+
 @bot.event
 async def on_ready():
     print("Bot online!")
     check.start(reminders)
 
+
+@bot.command()
+async def top(ctx):
+    text="```py\n📋 Rank | Name \n\n"
+    values=[tuple(x) for x in xps.values()]
+    rev=dict(zip(values,xps.keys()))
+    values=list(rev)
+    values.sort(reverse=True)
+    sno=0
+    for i in values:
+        sno+=1
+        user=bot.get_user(rev[i])
+        text+=f"[{sno}]     > #{user.name}:\n             Total Score: {i[0]}\n"
+    text+=f"\n------------------------------------------\n#Your Placing Stats \n😀 Rank: {sno}     Total Score: {xps[ctx.author.id][0]}```"
+
+    await ctx.send(content=text)
 
 
 
@@ -49,7 +112,7 @@ async def check(reminders):
                 user=bot.get_user(j[0])
                 await user.send("You have a reminder for the task : "+j[1])
             reminders.pop(i)
-            commit()
+            commit("r")
             break
 
 
@@ -96,7 +159,7 @@ async def remind(ctx):
     print(reminders)
 
     await ctx.send("Reminder added!")
-    commit()
+    commit("r")
 
 
 
@@ -175,7 +238,7 @@ async def delete(ctx):
                 else:
                     print(reminders.pop(dt))
                 await ctx.send("Task deleted!")
-    commit()
+    commit("r")
 
 
 
