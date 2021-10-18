@@ -7,7 +7,6 @@ import json
 import requests
 from random import randint
 import asyncio
-from pprint import pprint
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -180,7 +179,7 @@ async def top(ctx):
 @tasks.loop(minutes=1)
 async def check(reminders):
     for i in reminders:
-        if datetime.utcnow().strftime("%d-%m-%y %I.%M %p")>=i:
+        if datetime.utcnow()>=datetime.strptime(i,"%d-%m-%y %I.%M %p"):
             for j in reminders[i]:
                 user=bot.get_user(j[0])
                 await user.send(f"You have a reminder for the task : ```\n{j[1]}```")
