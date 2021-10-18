@@ -1,12 +1,13 @@
 import discord
 from discord.ext import commands,tasks
-from datetime import datetime
+from datetime import datetime,timedelta
 from dotenv import load_dotenv
 import os
 import json
 import requests
 from random import randint
 import asyncio
+from pprint import pprint
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -22,6 +23,7 @@ reminders=Data["reminders"]
 #{"date and time":[user.id, task]}
 user_reminders=Data["user reminders"]
 #{user.id:["date and time"]}
+timezones=Data["timezones"]
 f.close()
 f=open("xps.txt")
 xps=eval(f.read())
@@ -31,7 +33,7 @@ f.close()
 def commit(t):
     if t=="r":
         f=open("reminders.txt","w")
-        Data={"reminders":reminders, "user reminders":user_reminders }
+        Data={"reminders":reminders, "user reminders":user_reminders , "timezones":timezones}
         f.write(str(Data))
         f.close()
     else:
@@ -111,6 +113,47 @@ async def init(ctx):
 
 
 
+@bot.command(aliases=["settz", "tz"])
+async def timezone(ctx,location=None):
+    if location == None:
+        Embed=discord.Embed(title=" Set Timezone!",
+                            description="Set a timezone by adding your location! `!r timezone <location>`",
+                            colour=0xdb1414)
+        await ctx.send(embed=Embed)
+        return
+
+    url=f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={WAPI}"
+    data=json.loads(requests.get(url).content)
+    timezone=data["timezone"]
+    timezones[ctx.author.id]=timezone
+    time=timezone/60/60
+    hour=int(time)
+    minutes=str(int((time-hour)*60)).zfill(2)
+    hour=str(hour).zfill(2)
+    if time>0:
+        time=f"GMT +{hour}:{minutes}"
+    else:
+        time=f"GMT {hour}:{minutes}"
+
+
+
+    msg = await ctx.send("```\nInitializing...```")
+    await ctx.trigger_typing()
+    await asyncio.sleep(2)
+    await msg.edit(content=f"```\nFetching location {location.capitalize()}...```")
+    await asyncio.sleep(2)
+    await msg.edit(content=f"```\nSetting timezone {time}...```")
+    await asyncio.sleep(2)
+
+    commit("r")
+    Embed=discord.Embed(title="TIMEZONE SET ✅",
+                        description=f"Timezone set for user {ctx.author.name}",
+                        colour=0x2bf707)
+    Embed.add_field(name="Location", value=location.capitalize()+"\n _ _", inline=False)
+    Embed.add_field(name="Timezone", value=time+"\n _ _", inline = False)
+    await msg.edit(content="", embed=Embed)
+
+
 
 
 @bot.command()
@@ -125,18 +168,23 @@ async def top(ctx):
         sno+=1
         user=bot.get_user(rev[i])
         text+=f"[{sno}]     > #{user.name}:\n             Total Score: {i[0]}\n"
-    text+=f"\n------------------------------------------\n#Your Placing Stats \n😀 Rank: {sno}     Total Score: {xps[ctx.author.id][0]}```"
+        if ctx.author==user:
+            user_sn=sno
+
+    text+=f"\n------------------------------------------\n#Your Placing Stats \n😀 Rank: {user_sn}     Total Score: {xps[ctx.author.id][0]}```"
 
     await ctx.send(content=text)
+
 
 
 @tasks.loop(minutes=1)
 async def check(reminders):
     for i in reminders:
-        if datetime.now().strftime("%d-%m-%y %I.%M %p")>=i:
+        if datetime.utcnow().strftime("%d-%m-%y %I.%M %p")>=i:
             for j in reminders[i]:
                 user=bot.get_user(j[0])
-                await user.send(f"You have a reminder for the task : ```{j[1]}```")
+                await user.send(f"You have a reminder for the task : ```\n{j[1]}```")
+                user_reminders[user.id].remove(i)
             reminders.pop(i)
             commit("r")
             break
@@ -146,6 +194,16 @@ async def check(reminders):
 @bot.command(aliases=["remind_me","R","remind","remindme"])
 async def setreminder(ctx, date=None,*,time="12.00 AM"):
     try:
+        userid=ctx.author.id
+        if userid not in timezones:
+            Embed=discord.Embed(title="ERROR !",
+                                description="You have not added your timezone yet! `!r timezone <location>`",
+                                colour=0xdb1414)
+            await ctx.send(embed=Embed)
+            return
+
+        timezone=timedelta(seconds=timezones[userid])
+
         if date==None:
             Embed=discord.Embed(title="ERROR !",
                                 description="Enter a date please! Please try again using `!r setreminder`",
@@ -153,7 +211,7 @@ async def setreminder(ctx, date=None,*,time="12.00 AM"):
             await ctx.send(embed=Embed)
             return
         elif date.lower()=="today":
-            date=datetime.now().strftime("%d-%m-%y")
+            date=(datetime.utcnow() + timezone).strftime("%d-%m-%y")
 
 
         time.upper()
@@ -161,55 +219,58 @@ async def setreminder(ctx, date=None,*,time="12.00 AM"):
         date=date.replace("/","-")
         date=date.replace(".","-")
         format="%d-%m-%y %I.%M %p"
-        dt=date+" "+time
-        print(dt)
-        dcheck=datetime.strptime(dt,format)
-        if datetime.now()>=dcheck:
+        ogdt=date+" "+time
+        ogtime = datetime.strptime(ogdt,format)
+        utctime =  ogtime - timezone
+
+        if datetime.utcnow()>=utctime:
             Embed=discord.Embed(title="ERROR !",
                                 description="Date and time has already passed! Please try again using `!r setreminder`",
                                 colour=0xdb1414)
             await ctx.send(embed=Embed)
             return
 
-        dt=dcheck.strftime(format)
+        ogdt = ogtime.strftime(format)
+        utcdt = utctime.strftime(format)
+
         def check(m):
             return m.channel==ctx.channel and m.author==ctx.author
 
-        await ctx.send("```Please enter Task : ```")
+        await ctx.send("```\nPlease enter Task : ```")
         task = await bot.wait_for("message", check=check, timeout=30)
 
 
-        msg = await ctx.send("```Initializing...```")
+        msg = await ctx.send("```\nInitializing...```")
         await ctx.trigger_typing()
         await asyncio.sleep(2)
-
-        if dt not in reminders:
-            reminders[dt]=[[ctx.author.id, task.content]]
+        task=task.content
+        if utcdt not in reminders:
+            reminders[utcdt]=[[userid, task, ogdt]]
 
         else:
-            reminders[dt].append([ctx.author.id, task.content])
+            reminders[utcdt].append([userid, task, ogdt])
 
 
-        if ctx.author.id not in user_reminders:
-            user_reminders[ctx.author.id]=[dt]
+        if userid not in user_reminders:
+            user_reminders[ctx.author.id]=[utcdt]
         else:
-            user_reminders[ctx.author.id].append(dt)
+            user_reminders[ctx.author.id].append(utcdt)
 
 
         await ctx.trigger_typing()
-        await msg.edit(content="```Fetching reminder details..```")
+        await msg.edit(content="```\nFetching reminder details..```")
         await asyncio.sleep(2)
-        await msg.edit(content=f"```Adding reminder for date {date}...```")
+        await msg.edit(content=f"```\nAdding reminder for date {date}...```")
         await asyncio.sleep(2)
 
         commit("r")
 
         Embed=discord.Embed(title="REMINDER ADDED ✅",
-                            description="Reminder added successfully. Please do !r reminderlist for more.",
+                            description="Reminder added successfully. Please do `!r reminderlist` to view your reminders.",
                             colour=0x2bf707)
         Embed.add_field(name="Date", value=date)
         Embed.add_field(name="Time", value=time)
-        Embed.add_field(name="Task", value=f"```{task.content}```", inline=False)
+        Embed.add_field(name="Task", value=f"```\n{task}```", inline=False)
         await msg.edit(content="", embed=Embed)
 
     except ValueError:
@@ -229,39 +290,35 @@ async def setreminder(ctx, date=None,*,time="12.00 AM"):
 
 
 
-
-
-
-
-
-
-@bot.command(aliases=["Reminder_list","reminder_list"])
-async def rl(ctx, user : discord.Member = None):
+@bot.command(aliases=["Reminder_list","reminder_list","rl"])
+async def reminderlist(ctx, user : discord.Member = None):
     if user==None:
         user = ctx.author
-    if user.id not in user_reminders:
+    if user.id not in user_reminders or user_reminders[user.id]==[]:
         Embed=discord.Embed(title="ERROR !",
                             description="You don't have any reminders! To add reminder use - `!r setreminder`",
                             colour=0xdb1414)
         await ctx.send(embed=Embed)
         return
 
-    reminderdates=user_reminders[user.id]
+    reminderdates=list(set(user_reminders[user.id]))
+    reminderdates.sort()
 
-
-
-    Embed=discord.Embed(title="REMINDERS 📅", description=f"Reminders of {user.name}")
+    sno=0
+    Embed=discord.Embed(title="REMINDERS 📅", description=f"Reminders of {user.name}",timestamp=datetime.utcnow())
     for i in reminderdates:
         data = reminders[i]
         data.sort()
-        sno=0
+        text=""
+        reminderdate=data[0][2][:8]
+        remindertime=data[0][2][9:]
         for j in data:
-            text=""
             if j[0]==user.id:
                 sno+=1
-                text+=f"{sno}. **{j[1]}** - added by `{user.name}`\n"
-
-        Embed.add_field(name=f"{i}", value=text, inline=False)
+                task=j[1]
+                Embed.add_field(name=f"{sno}. {task}",
+                                value=f"**Date : **{reminderdate}\n**Time : **{remindertime}\n _ _\n _ _",
+                                inline=False)
 
     await ctx.send(embed=Embed)
 
@@ -272,75 +329,81 @@ async def rl(ctx, user : discord.Member = None):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 @bot.command()
-async def delete(ctx):
-    def check(m):
-        return m.channel==ctx.channel and m.author==ctx.author
-    format="%d-%m-%Y"
+async def delete(ctx, no: int=0, user=None):
+    if user==None:
+        user = ctx.author
+    if user.id not in user_reminders or user_reminders[user.id]==[]:
+        Embed=discord.Embed(title="ERROR !",
+                            description="You don't have any reminders! To add reminder use - `!r setreminder`",
+                            colour=0xdb1414)
+        await ctx.send(embed=Embed)
+        return
 
-    try:
-        await ctx.send("Enter delete task date(dd-mm-yyyy) : ")
-        date = await bot.wait_for("message", check=check, timeout=120)
-        try:
-            datetime.strptime(date.content,format)
-        except ValueError:
-            await ctx.send("Incorrect format of date, please try again!")
-    except Exception:
-        await ctx.send("No reply, session timed out!")
+    tasks={}
+    reminderdates=list(set(user_reminders[user.id]))
+    reminderdates.sort()
 
-    try:
-        await ctx.send("Enter delete task time(hh:mm AM/PM): ")
-        time = await bot.wait_for("message", check=check, timeout=120)
-        try:
-            datetime.strptime(time.content.upper(),"%I:%M %p")
-        except ValueError:
-            await ctx.send("Incorrect format of time, please try again!")
+    sno=0
+    for i in reminderdates:
+        data = reminders[i]
+        data.sort()
+        pos=0
+        for j in data:
+            if j[0]==user.id:
+                sno+=1
+                tasks[sno]=[i,j,pos]
+                pos+=1
 
-    except Exception:
-        await ctx.send("No reply, session timed out!")
 
-    try:
-        await ctx.send("Enter task : ")
-        task = await bot.wait_for("message", check=check, timeout=180)
-        task = task.content
-    except Exception:
-        await ctx.send("No reply, session timed out!")
+    if no not in tasks:
+        Embed=discord.Embed(title="ERROR !",
+                            description="You haven't entered a valid value of task number, please do - `!r reminderlist` to view your reminders",
+                            colour=0xdb1414)
+        await ctx.send(embed=Embed)
+        return
 
-    dt=date.content+" "+time.content
-    print(dt)
-    if dt not in reminders:
-        await ctx.send("There is no task on the given date!")
+    utcdate=tasks[no][0]
+    taskname=tasks[no][1][1]
+    pos=tasks[no][2]
+    date=tasks[no][1][2][:8]
+    time=tasks[no][1][2][9:]
+
+    msg = await ctx.send(f"```\nFetching reminder number {no}...```")
+    await ctx.trigger_typing()
+    await asyncio.sleep(2)
+    await msg.edit(content=f"```\nFetching date {date}...```")
+    await asyncio.sleep(1)
+    await msg.edit(content=f"```\nDeleting task :\"{taskname}\"...```")
+    await asyncio.sleep(1)
+
+    if len(reminders[utcdate])==1:
+        reminders.pop(utcdate)
     else:
-        print("task available")
-
-        tasks=[x[1] for x in reminders[dt]]
-        print(tasks)
-
-        if task not in tasks:
-            await ctx.send("Task not found!")
-        else:
-            pos=tasks.index(task)
-            if ctx.author.id!=reminders[dt][pos][0]:
-                await ctx.send("You cannot delete others reminders!")
-            else:
-                if len(tasks)!=1:
-                    print(reminders[dt].pop(pos))
-                else:
-                    print(reminders.pop(dt))
-                await ctx.send("Task deleted!")
+        reminders[utcdate].pop(pos)
+    user_reminders[user.id].remove(utcdate)
     commit("r")
+
+    Embed=discord.Embed(title="REMINDER DELETED",
+                        description="Reminder deleted successfully. Please do `!r reminderlist` to view your reminders.",
+                        colour=0xdb1414)
+    Embed.add_field(name="Date", value=date)
+    Embed.add_field(name="Time", value=time)
+    Embed.add_field(name="Task", value=f"```\n{taskname}```", inline=False)
+    await msg.edit(content="", embed=Embed)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -372,7 +435,7 @@ async def weather(ctx,location):
         colour=cloudy
 
 
-    Embed=discord.Embed(title=f"Weather:white_sun_rain_cloud: in {place} is currently : ", description=weather, timestamp=datetime.now(), colour=colour)
+    Embed=discord.Embed(title=f"Weather:white_sun_rain_cloud: in {place} is currently : ", description=weather, timestamp=datetime.utcnow(), colour=colour)
     Embed.add_field(name="Temperature(°C):", value=str(temp["temp"]), inline=False)
     Embed.add_field(name="Feels like(°C):",value=str(temp["feels_like"]), inline=False)
     Embed.add_field(name="Humidity:", value=str(temp["humidity"])+"%", inline=False)
